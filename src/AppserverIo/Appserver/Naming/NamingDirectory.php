@@ -34,9 +34,8 @@ use AppserverIo\Psr\Naming\NamingDirectoryInterface;
  * @link      https://github.com/appserver-io/appserver
  * @link      http://www.appserver.io
  */
-class NamingDirectory extends GenericStackable implements NamingDirectoryInterface
+class NamingDirectory implements NamingDirectoryInterface
 {
-
     /**
      * Trait which allows to bind instances and callbacks to the naming directory
      */
@@ -48,15 +47,78 @@ class NamingDirectory extends GenericStackable implements NamingDirectoryInterfa
      * @param string                                           $name   The directory name
      * @param \AppserverIo\Psr\Naming\NamingDirectoryInterface $parent The parent directory
      */
-    public function __construct($name = null, NamingDirectoryInterface $parent = null)
+    public function __construct($name = null, NamingDirectoryInterface $parent = null, $path = "")
     {
-
         // initialize the members
         $this->parent = $parent;
         $this->name = $name;
+        $this->path = $path;
+        error_log('$this->path: ' . $this->path);
+    }
 
-        // initialize the data
-        $this->data = new StackableStorage();
+    public function getGlobalStorage() {
+        $globalStorageClassname = APPSERVER_GLOBALSTORAGE_CLASSNAME;
+        return $globalStorageClassname::getInstance();
+    }
+
+    /**
+     * Returns the value with the passed name from the context.
+     *
+     * @param string $key The key of the value to return from the context.
+     *
+     * @return mixed The requested attribute
+     * @see \AppserverIo\Psr\Context\ContextInterface::getAttribute()
+     */
+    public function getAttribute($key, $appendPath = true)
+    {
+        $path = $key;
+        if ($appendPath === true && $this->path !== "") {
+            $path = $this->path . '/' . $key;
+        }
+        return $this->getGlobalStorage()->get(APPSERVER_STORAGE_GLOBAL, $path);
+    }
+
+    /**
+     * Queries if the attribute with the passed key is bound.
+     *
+     * @param string $key The key of the attribute to query
+     *
+     * @return boolean TRUE if the attribute is bound, else FALSE
+     */
+    public function hasAttribute($key, $appendPath = true)
+    {
+        $path = $key;
+        if ($appendPath === true && $this->path !== "") {
+            $path = $this->path . '/' . $key;
+        }
+        return $this->getGlobalStorage()->has(APPSERVER_STORAGE_GLOBAL, $path);
+    }
+
+    /**
+     * Sets the passed key/value pair in the directory.
+     *
+     * @param string $key   The attributes key
+     * @param mixed  $value Tha attribute to be bound
+     *
+     * @return void
+     */
+    public function setAttribute($key, $value, $appendPath = true)
+    {
+        $path = $key;
+        if ($appendPath === true && $this->path !== "") {
+            $path = $this->path . '/' . $key;
+        }
+        $this->getGlobalStorage()->set(APPSERVER_STORAGE_GLOBAL, $path, $value);
+    }
+
+    /**
+     * Returns the keys of the bound attributes.
+     *
+     * @return array The keys of the bound attributes
+     */
+    public function getAllKeys()
+    {
+        return $this->getGlobalStorage()->keys(APPSERVER_STORAGE_GLOBAL);
     }
 
     /**
@@ -98,7 +160,6 @@ class NamingDirectory extends GenericStackable implements NamingDirectoryInterfa
      */
     public function getScheme()
     {
-
         // if the parent directory has a schema, return this one
         if ($parent = $this->getParent()) {
             return $parent->getScheme();
@@ -135,54 +196,6 @@ class NamingDirectory extends GenericStackable implements NamingDirectoryInterfa
     }
 
     /**
-     * Returns the value with the passed name from the context.
-     *
-     * @param string $key The key of the value to return from the context.
-     *
-     * @return mixed The requested attribute
-     * @see \AppserverIo\Psr\Context\ContextInterface::getAttribute()
-     */
-    public function getAttribute($key)
-    {
-        return $this->data->get($key);
-    }
-
-    /**
-     * Queries if the attribute with the passed key is bound.
-     *
-     * @param string $key The key of the attribute to query
-     *
-     * @return boolean TRUE if the attribute is bound, else FALSE
-     */
-    public function hasAttribute($key)
-    {
-        return $this->data->has($key);
-    }
-
-    /**
-     * Sets the passed key/value pair in the directory.
-     *
-     * @param string $key   The attributes key
-     * @param mixed  $value Tha attribute to be bound
-     *
-     * @return void
-     */
-    public function setAttribute($key, $value)
-    {
-        $this->data->set($key, $value);
-    }
-
-    /**
-     * Returns the keys of the bound attributes.
-     *
-     * @return array The keys of the bound attributes
-     */
-    public function getAllKeys()
-    {
-        return $this->data->getAllKeys();
-    }
-
-    /**
      * Create and return a new naming subdirectory with the attributes
      * of this one.
      *
@@ -194,9 +207,16 @@ class NamingDirectory extends GenericStackable implements NamingDirectoryInterfa
     public function createSubdirectory($name, array $filter = array())
     {
 
-        // create a new subdirectory instance
-        $subdirectory = new NamingDirectory($name, $this);
+        if ($this->path !== "") {
+            $path = $this->path . '/' . $name;
+        } else {
+            $path = $name;
+        }
 
+        // create a new subdirectory instance
+        $subdirectory = new NamingDirectory($name, $this, $path);
+
+        /*
         // copy the attributes specified by the filter
         if (sizeof($filter) > 0) {
             foreach ($this->getAllKeys() as $key => $value) {
@@ -207,9 +227,10 @@ class NamingDirectory extends GenericStackable implements NamingDirectoryInterfa
                 }
             }
         }
+        */
 
         // bind it the directory
-        $this->bind($name, $subdirectory);
+        $this->bind($path, $subdirectory);
 
         // return the instance
         return $subdirectory;

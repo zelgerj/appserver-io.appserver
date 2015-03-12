@@ -79,6 +79,11 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
         $this->connected = false;
     }
 
+    public function getGlobalStorage() {
+        $globalStorageClassname = APPSERVER_GLOBALSTORAGE_CLASSNAME;
+        return $globalStorageClassname::getInstance();
+    }
+
     /**
      * Returns the value with the passed name from the context.
      *
@@ -87,9 +92,13 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
      * @return mixed The requested attribute
      * @see \AppserverIo\Psr\Context\ContextInterface::getAttribute()
      */
-    public function getAttribute($key)
+    public function getAttribute($key, $appendPath = true)
     {
-        return $this->data->get($key);
+        $path = $key;
+        if ($appendPath === true && $this->path !== "") {
+            $path = $this->path . '/' . $key;
+        }
+        return $this->getGlobalStorage()->get(APPSERVER_STORAGE_GLOBAL, $path);
     }
 
     /**
@@ -99,9 +108,13 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
      *
      * @return boolean TRUE if the attribute is bound, else FALSE
      */
-    public function hasAttribute($key)
+    public function hasAttribute($key, $appendPath = true)
     {
-        return $this->data->has($key);
+        $path = $key;
+        if ($appendPath === true && $this->path !== "") {
+            $path = $this->path . '/' . $key;
+        }
+        return $this->getGlobalStorage()->has(APPSERVER_STORAGE_GLOBAL, $path);
     }
 
     /**
@@ -112,9 +125,13 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
      *
      * @return void
      */
-    public function setAttribute($key, $value)
+    public function setAttribute($key, $value, $appendPath = true)
     {
-        $this->data->set($key, $value);
+        $path = $key;
+        if ($appendPath === true && $this->path !== "") {
+            $path = $this->path . '/' . $key;
+        }
+        $this->getGlobalStorage()->set(APPSERVER_STORAGE_GLOBAL, $path, $value);
     }
 
     /**
@@ -124,7 +141,7 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
      */
     public function getAllKeys()
     {
-        return $this->data->getAllKeys();
+        return $this->getGlobalStorage()->keys(APPSERVER_STORAGE_GLOBAL);
     }
 
     /**
@@ -136,7 +153,7 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
      */
     public function injectData(StorageInterface $data)
     {
-        $this->data = $data;
+        // disabled due to global storage static refactoring
     }
 
     /**
@@ -218,12 +235,19 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
      *
      * @return \AppserverIo\Appserver\Naming\NamingDirectory The new naming subdirectory
      */
-    public function createSubdirectory($name, array $filter = array())
+    public function createSubdirectory($name, array $filter = array(), $path = null)
     {
 
-        // create a new subdirectory instance
-        $subdirectory = new NamingDirectory($name, $this);
+        if ($this->path !== "") {
+            $path = $this->path . '/' . $name;
+        } else {
+            $path = $name;
+        }
 
+        // create a new subdirectory instance
+        $subdirectory = new NamingDirectory($name, $this, $path);
+
+        /*
         // copy the attributes specified by the filter
         if (sizeof($filter) > 0) {
             foreach ($this->getAllKeys() as $key => $value) {
@@ -234,9 +258,10 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
                 }
             }
         }
+        */
 
         // bind it the directory
-        $this->bind($name, $subdirectory);
+        $this->bind($path, $subdirectory);
 
         // return the instance
         return $subdirectory;
@@ -526,24 +551,43 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
 
         // bind the application (which is also a naming directory)
         $globalDir = $namingDirectory->search('php:global');
+
         $globalDir->bind($applicationName, $this);
 
         // prepare the application specific directories
         $webappPath = sprintf('%s/%s', $namingDirectory->search('env/appBase'), $applicationName);
         $tmpDirectory = sprintf('%s/%s', $namingDirectory->search('env/tmpDirectory'), $applicationName);
+
+        error_log('$tmpDirectory: ' . $tmpDirectory);
+
+        error_log(__METHOD__ . ':' . __LINE__);
+
         $cacheDirectory = sprintf('%s/%s', $tmpDirectory, ltrim($context->getParam(DirectoryKeys::CACHE), '/'));
         $sessionDirectory = sprintf('%s/%s', $tmpDirectory, ltrim($context->getParam(DirectoryKeys::SESSION), '/'));
+
+        error_log(__METHOD__ . ':' . __LINE__);
 
         // register the applications temporary directory in the naming directory
         list ($envDir, ) = $namingDirectory->getAttribute('env');
 
+        error_log(var_export($envDir, true));
+
+        error_log(__METHOD__ . ':' . __LINE__);
+
         // ATTENTION: This is necessary to avoid segfaults, resulting out of loosing the
         //            reference to the naming directory which is a \Stackable instance!
         $this->envAppDir = $envDir->createSubdirectory($applicationName);
+
+        error_log(var_export($this->envAppDir, true));
+
+        error_log(__METHOD__ . ':' . __LINE__);
+
         $this->envAppDir->bind('webappPath', $webappPath);
         $this->envAppDir->bind('tmpDirectory', $tmpDirectory);
         $this->envAppDir->bind('cacheDirectory', $cacheDirectory);
         $this->envAppDir->bind('sessionDirectory', $sessionDirectory);
+
+        error_log(__METHOD__ . ':' . __LINE__);
     }
 
     /**
@@ -637,6 +681,8 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
      */
     public function run()
     {
+        // register shutdown handler
+        register_shutdown_function(array(&$this, "shutdown"));
 
         // create the applications 'env' directory the beans will be bound to
         $appEnvDir = $this->createSubdirectory('env');
@@ -670,6 +716,24 @@ class Application extends \Thread implements ApplicationInterface, NamingDirecto
                 // profile the application context
                 $profileLogger->debug(sprintf('Application %s is running', $this->getName()));
             }
+
+            error_log(__METHOD__ . ':' . __LINE__);
+        }
+    }
+
+    /**
+     * Shutdown
+     *
+     * @return void
+     */
+    public function shutdown()
+    {
+        error_log('called: ' . __METHOD__);
+        // check if there was a fatal error caused shutdown
+        $lastError = error_get_last();
+        if ($lastError['type'] === E_ERROR || $lastError['type'] === E_USER_ERROR) {
+            // log error
+            error_log($lastError['message']);
         }
     }
 }

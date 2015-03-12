@@ -60,7 +60,7 @@ class StandardSessionManagerFactory
         // we need a session factory instance
         $sessionFactory = new SessionFactory($sessionPool);
         $sessionFactory->injectLoggers($loggers);
-        $sessionFactory->start();
+        $sessionFactory->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_GLOBALS);
 
         // we need a persistence manager and garbage collector
         $persistenceManager = new FilesystemPersistenceManager();
@@ -73,7 +73,7 @@ class StandardSessionManagerFactory
         $persistenceManager->injectUser($application->getUser());
         $persistenceManager->injectGroup($application->getGroup());
         $persistenceManager->injectUmask($application->getUmask());
-        $persistenceManager->start();
+        $persistenceManager->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_GLOBALS);
 
         // we need a garbage collector
         $garbageCollector = new StandardGarbageCollector();

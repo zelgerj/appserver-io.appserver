@@ -94,13 +94,19 @@ abstract class AbstractContainerThread extends AbstractContextThread implements 
         // create a new API app service instance
         $this->service = $this->newService('AppserverIo\Appserver\Core\Api\AppService');
 
+        error_log(__METHOD__ . ':' . __LINE__);
+
         // create and initialize the naming directory
         $this->namingDirectory = new NamingDirectory();
         $this->namingDirectory->setScheme('php');
 
+        error_log(__METHOD__ . ':' . __LINE__);
+
         // create global/env and global/log naming directories
         $globalDir = $this->namingDirectory->createSubdirectory('global');
         $envDir = $this->namingDirectory->createSubdirectory('env');
+
+        error_log(__METHOD__ . ':' . __LINE__);
 
         // initialize the naming directory with the environment data
         $this->namingDirectory->bind('php:env/appBase', $this->getAppBase());
@@ -110,25 +116,37 @@ abstract class AbstractContainerThread extends AbstractContextThread implements 
         $this->namingDirectory->bind('php:env/user', $this->getInitialContext()->getSystemConfiguration()->getUser());
         $this->namingDirectory->bind('php:env/group', $this->getInitialContext()->getSystemConfiguration()->getGroup());
 
+        error_log(__METHOD__ . ':' . __LINE__);
+
         // create the directory the loggers will be bound to
         $logDir = $globalDir->createSubdirectory('log');
+
+        error_log(__METHOD__ . ':' . __LINE__);
 
         // register the loggers in the naming directory
         foreach ($this->getInitialContext()->getLoggers() as $name => $logger) {
             $logDir->bind($name, $logger);
         }
 
+        error_log(__METHOD__ . ':' . __LINE__);
+
         // initialize instance that contains the applications
         $this->applications = new GenericStackable();
 
+        error_log(__METHOD__ . ':' . __LINE__);
+
         // initialize the container state
         $this->containerState = ContainerStateKeys::get(ContainerStateKeys::INITIALIZATION_SUCCESSFUL);
+
+        error_log(__METHOD__ . ':' . __LINE__);
 
         // define webservers base dir
         define(
             'SERVER_BASEDIR',
             $this->getInitialContext()->getSystemConfiguration()->getBaseDirectory() . DIRECTORY_SEPARATOR
         );
+
+        error_log(__METHOD__ . ':' . __LINE__);
 
         // check if we've the old or the new directory structure
         if (file_exists(SERVER_BASEDIR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php')) {
@@ -138,22 +156,30 @@ abstract class AbstractContainerThread extends AbstractContextThread implements 
             $autoloaderFile = SERVER_BASEDIR . 'app' . DIRECTORY_SEPARATOR . 'code' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php';
         }
 
+        error_log(__METHOD__ . ':' . __LINE__);
+
         // define the autoloader file
         define('SERVER_AUTOLOADER', $autoloaderFile);
 
+
+        error_log(__METHOD__ . ':' . __LINE__);
         // deploy and initialize the applications for this container
         $deployment = $this->getDeployment();
         $deployment->injectContainer($this);
         $deployment->deploy();
 
+
+        error_log(__METHOD__ . ':' . __LINE__);
         // initialize the profile logger and the thread context
         if ($profileLogger = $this->getInitialContext()->getLogger(LoggerUtils::PROFILE)) {
             $profileLogger->appendThreadContext($this->getContainerNode()->getName());
         }
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // deployment has been successful
         $this->containerState = ContainerStateKeys::get(ContainerStateKeys::DEPLOYMENT_SUCCESSFUL);
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // setup configurations
         $serverConfigurations = array();
         foreach ($this->getContainerNode()->getServers() as $serverNode) {
@@ -166,6 +192,7 @@ abstract class AbstractContainerThread extends AbstractContextThread implements 
             $serverConfigurations[] = new ServerNodeConfiguration($serverNode);
         }
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // init server array
         $servers = array();
 
@@ -190,6 +217,8 @@ abstract class AbstractContainerThread extends AbstractContextThread implements 
             // Collect the servers we started
             $servers[] = $server;
         }
+
+        error_log(__METHOD__ . ':' . __LINE__);
 
         // wait for all servers to be started
         $waitForServers = true;

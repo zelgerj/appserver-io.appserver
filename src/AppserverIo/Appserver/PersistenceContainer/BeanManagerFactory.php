@@ -55,6 +55,8 @@ class BeanManagerFactory
         // load the registered loggers
         $loggers = $application->getInitialContext()->getLoggers();
 
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
+
         // initialize the bean locator
         $beanLocator = new BeanLocator();
 
@@ -62,26 +64,48 @@ class BeanManagerFactory
         $initialContext = new NamingContext();
         $initialContext->injectApplication($application);
 
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
+
         // initialize the stackable for the data, the stateful + singleton session beans and the naming directory
         $data = new StackableStorage();
         $instances = new GenericStackable();
         $statefulSessionBeans = new StackableStorage();
         $singletonSessionBeans = new StackableStorage();
 
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
         // initialize the default settings for the stateful session beans
         $statefulSessionBeanSettings = new DefaultStatefulSessionBeanSettings();
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
         $statefulSessionBeanSettings->mergeWithParams($managerConfiguration->getParamsAsArray());
 
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
         // we need a factory instance for the stateful session bean instances
         $statefulSessionBeanMapFactory = new StatefulSessionBeanMapFactory($statefulSessionBeans);
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
         $statefulSessionBeanMapFactory->injectLoggers($loggers);
-        $statefulSessionBeanMapFactory->start();
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
+        $statefulSessionBeanMapFactory->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_GLOBALS);
 
+
+
+        $gs = call_user_func(APPSERVER_GLOBALSTORAGE_CLASSNAME . '::getInstance');
+        error_log(var_export($gs::$storages[APPSERVER_STORAGE_GLOBAL], true));
+
+
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
         // create an instance of the object factory
         $objectFactory = new GenericObjectFactory();
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
         $objectFactory->injectInstances($instances);
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
         $objectFactory->injectApplication($application);
-        $objectFactory->start();
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
+        $objectFactory->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_GLOBALS);
+
+
+
+
+        error_log(__METHOD__ . ':' . __LINE__ . ' ## ' . var_export(get_class($application), true));
 
         // initialize the bean manager
         $beanManager = new BeanManager();

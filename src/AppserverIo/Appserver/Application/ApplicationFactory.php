@@ -20,6 +20,7 @@
 
 namespace AppserverIo\Appserver\Application;
 
+use AppserverIo\Appserver\Core\GlobalStorage;
 use AppserverIo\Storage\StackableStorage;
 use AppserverIo\Storage\GenericStackable;
 use AppserverIo\Appserver\Core\Api\Node\ContextNode;
@@ -48,38 +49,50 @@ class ApplicationFactory
     public static function visit(ContainerInterface $container, ContextNode $context)
     {
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // prepare the path to the applications base directory
         $folder = $container->getAppBase() . DIRECTORY_SEPARATOR . $context->getName();
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // declare META-INF and WEB-INF directory
         $webInfDir = $folder . DIRECTORY_SEPARATOR . 'WEB-INF';
         $metaInfDir = $folder . DIRECTORY_SEPARATOR . 'META-INF';
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // check if we've a directory containing a valid application,
         // at least a WEB-INF or META-INF folder has to be available
         if (!is_dir($webInfDir) && !is_dir($metaInfDir)) {
             return;
         }
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // load the naming directory + initial context
         $initialContext = $container->getInitialContext();
         $namingDirectory = $container->getNamingDirectory();
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // load the application service
         $appService = $container->newService('AppserverIo\Appserver\Core\Api\AppService');
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // load the application type
         $contextType = $context->getType();
         $applicationName = $context->getName();
 
+
+        error_log(__METHOD__ . ':' . __LINE__);
         // create a new application instance
+
         $application = new $contextType();
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // initialize the storage for managers, virtual hosts an class loaders
         $data = new StackableStorage();
         $managers = new GenericStackable();
         $classLoaders = new GenericStackable();
 
+
+        error_log(__METHOD__ . ':' . __LINE__);
         // initialize the generic instances and information
         $application->injectData($data);
         $application->injectManagers($managers);
@@ -88,13 +101,20 @@ class ApplicationFactory
         $application->injectInitialContext($initialContext);
         $application->injectNamingDirectory($namingDirectory);
 
+
+        error_log(__METHOD__ . ':' . __LINE__);
         // prepare the application instance
         $application->prepare($context);
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // create the applications temporary folders and cleans the folders up
         $appService->createTmpFolders($application);
+
+        $application->getTmpDir();
+
         $appService->cleanUpFolders($application);
 
+        error_log(__METHOD__ . ':' . __LINE__);
         // add the default class loader
         $application->addClassLoader(
             $initialContext->getClassLoader(),
@@ -105,8 +125,10 @@ class ApplicationFactory
         foreach ($context->getClassLoaders() as $classLoader) {
             if ($classLoaderFactory = $classLoader->getFactory()) {
                 // use the factory if available
+                error_log(__METHOD__ . ':' . __LINE__);
                 $classLoaderFactory::visit($application, $classLoader);
             } else {
+                error_log(__METHOD__ . ':' . __LINE__);
                 // if not, try to instanciate the class loader directly
                 $classLoaderType = $classLoader->getType();
                 $application->addClassLoader(new $classLoaderType($classLoader), $classLoader);
@@ -117,8 +139,11 @@ class ApplicationFactory
         foreach ($context->getManagers() as $manager) {
             if ($managerFactory = $manager->getFactory()) {
                 // use the factory if available
+                error_log(__METHOD__ . ':' . __LINE__);
+
                 $managerFactory::visit($application, $manager);
             } else {
+                error_log(__METHOD__ . ':' . __LINE__);
                 // if not, try to instanciate the manager directly
                 $managerType = $manager->getType();
                 $application->addManager(new $managerType($manager), $manager);

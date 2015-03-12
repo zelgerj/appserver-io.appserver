@@ -260,14 +260,14 @@ class AppService extends AbstractFileOperationService
      */
     public function createTmpFolders(ApplicationInterface $application)
     {
-
+        error_log(__METHOD__ . ':' . __LINE__);
         // create the directory we want to store the sessions in
         $tmpFolders = array(
             new \SplFileInfo($application->getTmpDir()),
             new \SplFileInfo($application->getCacheDir()),
             new \SplFileInfo($application->getSessionDir())
         );
-
+        error_log(__METHOD__ . ':' . __LINE__);
         // create the applications temporary directories
         foreach ($tmpFolders as $tmpFolder) {
             $this->createDirectory($tmpFolder);

@@ -22,8 +22,10 @@ namespace AppserverIo\Appserver\ServletEngine;
 
 use AppserverIo\Http\HttpProtocol;
 use AppserverIo\Http\HttpResponseStates;
+use AppserverIo\Psr\Application\ApplicationInterface;
 use AppserverIo\Psr\HttpMessage\RequestInterface;
 use AppserverIo\Psr\HttpMessage\ResponseInterface;
+use AppserverIo\Psr\Servlet\ServletException;
 use AppserverIo\Psr\Servlet\Http\HttpServletRequestInterface;
 use AppserverIo\Server\Dictionaries\ModuleHooks;
 use AppserverIo\Server\Dictionaries\ServerVars;
@@ -32,8 +34,112 @@ use AppserverIo\Server\Interfaces\ServerContextInterface;
 use AppserverIo\Server\Exceptions\ModuleException;
 use AppserverIo\Appserver\ServletEngine\Http\Request;
 use AppserverIo\Appserver\ServletEngine\Http\Response;
-use AppserverIo\Appserver\ServletEngine\Http\Part;
-use AppserverIo\Psr\Servlet\ServletException;
+
+
+class AThread extends \Thread
+{
+    public function run() {
+        try {
+
+            // register shutdown handler
+            register_shutdown_function(array(&$this, "shutdown"));
+
+            // synchronize the application instance
+            $application = $this->application;
+            $application->lock();
+
+            // register class loaders
+            $application->registerClassLoaders();
+
+            // synchronize the valves, servlet request/response
+            $valves = $this->valves;
+            $servletRequest = $this->servletRequest;
+
+            // initialize servlet session, request + response
+            $servletResponse = new Response();
+            $servletResponse->init();
+
+            // inject the sapplication and servlet response
+            $servletRequest->injectResponse($servletResponse);
+            $servletRequest->injectContext($application);
+
+            // prepare the request instance
+            $servletRequest->prepare();
+
+            $application->unlock();
+
+
+            // process the valves
+            foreach ($valves as $valve) {
+                /*
+                $valve->invoke($servletRequest, $servletResponse);
+                   */
+                if ($servletRequest->isDispatched() === true) {
+                    break;
+                }
+            }
+
+        } catch (\Exception $e) {
+                // bind the exception in the respsonse
+                $this->exception = $e;
+            }
+    }
+
+    /**
+     * Injects the valves to be processed.
+     *
+     * @param array $valves The valves to process
+     *
+     * @return void
+     */
+    public function injectValves(array $valves)
+    {
+        $this->valves = $valves;
+    }
+
+    /**
+     * Injects the application of the request to be handled
+     *
+     * @param \AppserverIo\Psr\Application\ApplicationInterface $application The application instance
+     *
+     * @return void
+     */
+    public function injectApplication(ApplicationInterface $application)
+    {
+        $this->application = $application;
+    }
+
+    /**
+     * Inject the actual servlet request.
+     *
+     * @param \AppserverIo\Psr\Servlet\Http\HttpServletRequestInterface $servletRequest The actual request instance
+     *
+     * @return void
+     */
+    public function injectRequest(HttpServletRequestInterface $servletRequest)
+    {
+        $this->servletRequest = $servletRequest;
+    }
+
+    /**
+     * Does shutdown logic for request handler if something went wrong and produces
+     * a fatal error for example.
+     *
+     * @return void
+     */
+    public function shutdown()
+    {
+
+        // check if there was a fatal error caused shutdown
+        $lastError = error_get_last();
+        if ($lastError['type'] === E_ERROR || $lastError['type'] === E_USER_ERROR) {
+            // set the status code and append the error message to the body
+            $this->statusCode = 500;
+            $this->bodyStream = $lastError['message'];
+        }
+    }
+
+}
 
 /**
  * A servlet engine implementation.
@@ -104,6 +210,7 @@ class ServletEngine extends AbstractServletEngine
      * @param int                                                    $hook           The current hook to process logic for
      *
      * @return bool
+     * @throws \AppserverIo\Server\Exceptions\ModuleException
      */
     public function process(
         RequestInterface $request,
@@ -122,94 +229,40 @@ class ServletEngine extends AbstractServletEngine
             return;
         }
 
-        // initialize servlet session, request + response
-        $servletRequest = new Request();
-        $servletRequest->injectHttpRequest($request);
-        $servletRequest->injectServerVars($requestContext->getServerVars());
-
-        // initialize the parts
-        foreach ($request->getParts() as $part) {
-            $servletRequest->addPart(Part::fromHttpRequest($part));
-        }
-
-        // set the body content if we can find one
-        if ($request->getHeader(HttpProtocol::HEADER_CONTENT_LENGTH) > 0) {
-            $servletRequest->setBodyStream($request->getBodyContent());
-        }
-
-        // prepare the servlet request
-        $this->prepareServletRequest($servletRequest);
-
-        // initialize the servlet response with the Http response values
-        $servletResponse = new Response();
-        $servletRequest->injectResponse($servletResponse);
-
-        // get the valve locally
+        // create a copy of the valve instances
         $valves = $this->valves;
+        $handlers = $this->handlers;
 
         // load the application associated with this request
         $application = $this->findRequestedApplication($requestContext);
 
-        // prepare and set the applications context path
-        $servletRequest->setContextPath($contextPath = '/' . $application->getName());
-        $servletRequest->setServletPath(str_replace($contextPath, '', $servletRequest->getServletPath()));
+        // create a new request instance from the HTTP request
+        $servletRequest = new Request();
+        $servletRequest->fromHttpRequest($request);
+        $servletRequest->injectHandlers($handlers);
+        $servletRequest->injectServerVars($requestContext->getServerVars());
 
-        // prepare the base modifier which allows our apps to provide a base URL
-        $webappsDir = $this->getServerContext()->getServerConfig()->getDocumentRoot();
-        $relativeRequestPath = strstr($servletRequest->getServerVar(ServerVars::DOCUMENT_ROOT), $webappsDir);
-        $proposedBaseModifier = str_replace($webappsDir, '', $relativeRequestPath);
 
-        //  prepare the base modifier
-        if (strpos($proposedBaseModifier, $contextPath) === 0) {
-            $servletRequest->setBaseModifier('');
-        } else {
-            $servletRequest->setBaseModifier($contextPath);
-        }
+//        $requestHandler = new AThread();
+//        $requestHandler->injectValves($valves);
+//        $requestHandler->injectApplication($application);
+//        $requestHandler->injectRequest($servletRequest);
+//        $requestHandler->start();
+//        $requestHandler->join();
+
 
         // initialize the request handler instance
         $requestHandler = new RequestHandler();
         $requestHandler->injectValves($valves);
         $requestHandler->injectApplication($application);
         $requestHandler->injectRequest($servletRequest);
-        $requestHandler->injectResponse($servletResponse);
         $requestHandler->start();
         $requestHandler->join();
 
-        // query whether an exception has been thrown, if yes, re-throw it
-        if ($servletResponse->hasException()) {
-            throw $servletResponse->getException();
-        }
+        // copy values to the HTTP response
+        $requestHandler->copyToHttpResponse($response);
 
-        // copy the values from the servlet response back to the HTTP response
-        $response->setStatusCode($servletResponse->getStatusCode());
-        $response->setStatusReasonPhrase($servletResponse->getStatusReasonPhrase());
-        $response->setVersion($servletResponse->getVersion());
-        $response->setState($servletResponse->getState());
-
-        // append the content to the body stream
-        $response->appendBodyStream($servletResponse->getBodyStream());
-
-        // transform the servlet headers back into HTTP headers
-        foreach ($servletResponse->getHeaders() as $name => $header) {
-            $response->addHeader($name, $header);
-        }
-
-        // copy the servlet response cookies back to the HTTP response
-        foreach ($servletResponse->getCookies() as $cookieName => $cookieValue) {
-            // load the cookie and check if we've an array or a single cookie instance
-            if (is_array($cookie = $servletResponse->getCookie($cookieName))) {
-                foreach ($cookie as $c) {
-                    // add all the cookies
-                    $response->addCookie($c);
-                }
-
-            } else {
-                // add the cookie instance directly
-                $response->addCookie($cookie);
-            }
-        }
-
-        // set response state to be dispatched after this without calling other modules process
+          // set response state to be dispatched after this without calling other modules process
         $response->setState(HttpResponseStates::DISPATCH);
     }
 

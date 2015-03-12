@@ -49,38 +49,18 @@ trait BindingTrait
      */
     public function bind($name, $value, array $args = array())
     {
-
+        $origName = $name;
         // strip off the schema
-        $name = str_replace(sprintf('%s:', $this->getScheme()), '', $name);
+        $name = str_replace(sprintf('%s:', 'php'), '', $name);
 
-        // tokenize the name
-        $token = strtok($name, '/');
+        // check if we can find something
+        if ($this->hasAttribute($name, ($origName === $name))) {
+            // throw an exception if we can't resolve the name
+            throw new NamingException(sprintf('Cant\'t bind %s to value of naming directory %s', $name, $this->getIdentifier()));
 
-        // while we've tokens, try to find the appropriate subdirectory
-        while ($token !== false) {
-            // check if we can find something
-            if ($this->hasAttribute($token)) {
-                // load the data bound to the token
-                $data = $this->getAttribute($token);
-
-                // load the bound value/args
-                list ($valueFound, ) = $data;
-
-                // try to bind it to the subdirectory
-                if ($valueFound instanceof NamingDirectoryInterface) {
-                    return $valueFound->bind(str_replace($token . '/', '', $name), $value, $args);
-                }
-
-                // throw an exception if we can't resolve the name
-                throw new NamingException(sprintf('Cant\'t bind %s to value of naming directory %s', $token, $this->getIdentifier()));
-
-            } else {
-                // bind the value
-                return $this->setAttribute($token, array($value, $args));
-            }
-
-            // load the next token
-            $token = strtok('/');
+        } else {
+            // bind the value
+            return $this->setAttribute($name, array($value, $args), ($origName === $name));
         }
 
         // throw an exception if we can't resolve the name
@@ -129,18 +109,26 @@ trait BindingTrait
     public function search($name, array $args = array())
     {
 
+        $origName = $name;
         // strip off the schema
-        $name = str_replace(sprintf('%s:', $this->getScheme()), '', $name);
+        $name = str_replace(sprintf('%s:', 'php'), '', $name);
+
+        error_log(__METHOD__ . ': $name = ' . $name);
 
         // tokenize the name
         $token = strtok($name, '/');
 
+        error_log(__METHOD__ . ':' . __LINE__);
+
         // while we've tokens, try to find a value bound to the token
         while ($token !== false) {
+
+            error_log(__METHOD__ . ':' . __LINE__);
+
             // check if we can find something
-            if ($this->hasAttribute($token)) {
+            if ($this->hasAttribute($name)) {
                 // load the value
-                $found = $this->getAttribute($token);
+                $found = $this->getAttribute($name);
 
                 // load the binded value/args
                 list ($value, $bindArgs) = $found;
@@ -148,18 +136,25 @@ trait BindingTrait
                 // check if we've a callback method
                 if (is_callable($value)) {
                     // if yes, merge the params and invoke the callback
-                    return call_user_func_array($value, array_merge($bindArgs, $args));
+                    foreach ($args as $arg) {
+                        $bindArgs[] = $arg;
+                    }
+                    // invoke the callback
+                    error_log(__METHOD__ . ':' . __LINE__);
+                    return call_user_func_array($value, $bindArgs);
                 }
 
                 // search recursive
                 if ($value instanceof NamingDirectoryInterface) {
                     if ($value->getName() !== $name) {
                         // if $value is NOT what we're searching for
-                        return $value->search(str_replace($token . '/', '', $name), $args);
+                        error_log(__METHOD__ . ':' . __LINE__);
+                        return $value->search($name . '/' . $token, $args);
                     }
                 }
 
                 // if not, simply return the value/object
+                error_log(__METHOD__ . ':' . __LINE__);
                 return $value;
             }
 
@@ -167,10 +162,14 @@ trait BindingTrait
             $token = strtok('/');
         }
 
+        /*
         // delegate the search request to the parent directory
         if ($parent = $this->getParent()) {
             return $parent->search($name, $args);
         }
+        */
+
+        error_log(__METHOD__ . ':' . __LINE__);
 
         // throw an exception if we can't resolve the name
         throw new NamingException(sprintf('Cant\'t resolve %s in naming directory %s', ltrim($name, '/'), $this->getIdentifier()));
